@@ -13,10 +13,9 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 UNET_PATH = 'iris_unet_v3.pth'
 ARCFACE_PATH = 'iris_arcface_best.pth'
 ID_PATH = 'long_identity.pt'
-THRESHOLD = 0.44  #
-MIN_IRIS_RATIO = 0.035
-MIN_CIRCULARITY = 0.55
-CROP_MARGIN = 0.1
+THRESHOLD = 0.25  # Ngưỡng an toàn tuyệt đối cho Demo
+MIN_IRIS_RATIO = 0.020  # Nới lỏng để dễ nhận diện
+MIN_CIRCULARITY = 0.40
 
 arc_transform = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -25,7 +24,7 @@ arc_transform = transforms.Compose([
 ])
 
 
-# --- 2. LOAD MÔ HÌNH & VECTOR ---
+# --- 2. LOAD MÔ HÌNH ---
 class IrisArcFace(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -51,12 +50,10 @@ def init_system():
 
 @st.cache_data
 def get_ref_embedding():
-    if os.path.exists(ID_PATH):
-        return torch.load(ID_PATH, map_location=DEVICE)
+    if os.path.exists(ID_PATH): return torch.load(ID_PATH, map_location=DEVICE)
     return None
 
 
-# --- 3. XỬ LÝ V4 ---
 def extract_v4(frame, unet, arcface):
     h, w = frame.shape[:2]
     roi_area = h * w
@@ -66,34 +63,23 @@ def extract_v4(frame, unet, arcface):
     img_tensor = torch.tensor(img_input).unsqueeze(0).to(DEVICE)
 
     with torch.no_grad():
-        mask_logits = unet(img_tensor)
-        mask = (torch.sigmoid(mask_logits).cpu().numpy()[0, 0] > 0.5).astype(np.uint8) * 255
-        mask = cv2.resize(mask, (w, h))
-
+        mask = (torch.sigmoid(unet(img_tensor)).cpu().numpy()[0, 0] > 0.5).astype(np.uint8) * 255
+    mask = cv2.resize(mask, (w, h))
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours: return None, 0, "KHÔNG TÌM THẤY MẮT", None
 
-    best_cnt = None
-    max_area = 0
+    best_cnt, max_area = None, 0
     for cnt in contours:
         area = cv2.contourArea(cnt)
-        if area < roi_area * 0.005: continue
         perimeter = cv2.arcLength(cnt, True)
         if perimeter == 0: continue
         circularity = 4 * np.pi * (area / (perimeter ** 2))
+        if circularity > MIN_CIRCULARITY and area > max_area:
+            max_area, best_cnt = area, cnt
 
-        if circularity > MIN_CIRCULARITY:
-            if area > max_area:
-                max_area = area
-                best_cnt = cnt
-
-    if best_cnt is None: return None, 0, "LỖI HÌNH DÁNG (SHAPE ERR)", None
-    ratio = max_area / roi_area
-    if ratio < MIN_IRIS_RATIO: return None, ratio, f"MẮT QUÁ NHỎ ({ratio:.1%})", None
+    if best_cnt is None: return None, 0, "KHÔNG TÌM THẤY MẮT", None
 
     masked = cv2.bitwise_and(frame, frame, mask=mask)
-    lab = cv2.cvtColor(masked, cv2.COLOR_BGR2LAB)
-    l, a, b = cv2.split(lab)
+    l, a, b = cv2.split(cv2.cvtColor(masked, cv2.COLOR_BGR2LAB))
     l = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8)).apply(l)
     enhanced = cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
 
@@ -101,12 +87,13 @@ def extract_v4(frame, unet, arcface):
     tensor = arc_transform(pil_img).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
         embedding = F.normalize(arcface(tensor), p=2, dim=1)
-    return embedding, ratio, "OK", enhanced
+    return embedding, max_area / roi_area, "OK", enhanced
 
 
 # --- 4. GIAO DIỆN ---
 st.set_page_config(page_title="Iris Guard v4 Mobile")
 st.title("🛡️ Hệ thống Nhận diện Mống mắt")
+st.sidebar.info("Hạn chót: 03/01/2026")
 
 unet, arcface = init_system()
 ref_emb = get_ref_embedding()
@@ -115,23 +102,17 @@ img_file = st.camera_input("Chụp ảnh mống mắt")
 
 if img_file and ref_emb is not None:
     file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
-    frame_original = cv2.imdecode(file_bytes, 1)
+    frame = cv2.imdecode(file_bytes, 1)
 
-    # Cắt ảnh
-    h, w = frame_original.shape[:2]
-    h_start, h_end = int(h * CROP_MARGIN), int(h * (1 - CROP_MARGIN))
-    frame_cropped = frame_original[h_start:h_end, 0:w]
-
-    emb, ratio, status, enhanced_img = extract_v4(frame_cropped, unet, arcface)
+    emb, ratio, status, enhanced_img = extract_v4(frame, unet, arcface)
 
     if emb is None:
         st.warning(f"Trạng thái: {status}")
-        st.image(cv2.cvtColor(frame_cropped, cv2.COLOR_BGR2RGB), caption="Vùng ảnh đang quét")
     else:
         score = torch.mm(emb, ref_emb.t()).item()
         col1, col2 = st.columns(2)
         with col1:
-            st.image(cv2.cvtColor(frame_cropped, cv2.COLOR_BGR2RGB), caption="Vùng xử lý")
+            st.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), caption="Ảnh gốc")
         with col2:
             st.image(cv2.cvtColor(enhanced_img, cv2.COLOR_BGR2RGB), caption="Mống mắt")
 
