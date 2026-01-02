@@ -1,0 +1,16 @@
+# Loại bỏ môi trường ảo
+.venv/
+
+# Loại bỏ các tập dữ liệu nặng
+auto_labels/
+CLASSES_400_300_Part1/
+CLASSES_400_300_Part2/
+ubiris_seg/
+
+# Loại bỏ các file tạm của Python
+__pycache__/
+*.pyc
+
+# (Tùy chọn) Loại bỏ ảnh cá nhân nếu bạn dùng file vector mẫu thay thế
+my_data/
+my_data/Long
