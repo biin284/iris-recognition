@@ -13,10 +13,10 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 UNET_PATH = 'iris_unet_v3.pth'
 ARCFACE_PATH = 'iris_arcface_best.pth'
 ID_PATH = 'long_identity.pt'
-THRESHOLD = 0.48  #
+THRESHOLD = 0.44  #
 MIN_IRIS_RATIO = 0.035
 MIN_CIRCULARITY = 0.55
-CROP_RATIO = 0.7
+CROP_MARGIN = 0.1
 
 arc_transform = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -119,14 +119,22 @@ if img_file and ref_emb is not None:
 
     # Cắt ảnh
     h, w = frame_original.shape[:2]
-    frame_cropped = frame_original[0:int(h * CROP_RATIO), 0:w]
+    h_start, h_end = int(h * CROP_MARGIN), int(h * (1 - CROP_MARGIN))
+    frame_cropped = frame_original[h_start:h_end, 0:w]
 
     emb, ratio, status, enhanced_img = extract_v4(frame_cropped, unet, arcface)
 
     if emb is None:
         st.warning(f"Trạng thái: {status}")
+        st.image(cv2.cvtColor(frame_cropped, cv2.COLOR_BGR2RGB), caption="Vùng ảnh đang quét")
     else:
         score = torch.mm(emb, ref_emb.t()).item()
+        col1, col2 = st.columns(2)
+        with col1:
+            st.image(cv2.cvtColor(frame_cropped, cv2.COLOR_BGR2RGB), caption="Vùng xử lý")
+        with col2:
+            st.image(cv2.cvtColor(enhanced_img, cv2.COLOR_BGR2RGB), caption="Mống mắt")
+
         if score > THRESHOLD:
             st.success(f"✅ HỢP LỆ (Score: {score:.4f})")
             st.balloons()
