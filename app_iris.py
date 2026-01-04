@@ -13,7 +13,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 UNET_PATH = 'iris_unet_v3.pth'
 ARCFACE_PATH = 'iris_arcface_best.pth'
 IDS_DIR = 'identities'  # Thư mục chứa dữ liệu định danh
-THRESHOLD = 0.222  # Ngưỡng an toàn
+THRESHOLD = 0.50  # Ngưỡng an toàn
 MIN_IRIS_RATIO = 0.020
 MIN_CIRCULARITY = 0.40
 
