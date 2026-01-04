@@ -15,7 +15,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 UNET_PATH = 'iris_unet_v3.pth'
 ARCFACE_PATH = 'iris_arcface_best.pth'
 UBIRIS_PATH = r'E:\iris_reconigtion\CLASSES_400_300_Part2'
-THRESHOLD_KAGGLE = 0.244
+THRESHOLD_KAGGLE = 0.222
 
 
 # [Định nghĩa lớp IrisArcFace và hàm load_system, process_image giữ nguyên như cũ]
@@ -81,7 +81,7 @@ if len(valid_ids) < 2:
     print("❌ Lỗi: Không đủ dữ liệu ID để thực hiện so sánh chéo.")
     exit()
 
-test_ids = random.sample(valid_ids, min(5, len(valid_ids)))
+test_ids = random.sample(valid_ids, min(100, len(valid_ids)))
 
 print(f"✅ Đang test {len(test_ids)} danh tính từ cấu trúc ảnh phẳng...")
 print(f"{'Identity':<15} | {'Type':<10} | {'Score':<10} | {'Result':<10} | {'Latency (s)'}")

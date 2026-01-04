@@ -1,5 +1,7 @@
 # Loại bỏ môi trường ảo
 .venv/
+.env
+.venv/
 
 # Loại bỏ các tập dữ liệu nặng
 auto_labels/
@@ -14,3 +16,6 @@ __pycache__/
 # (Tùy chọn) Loại bỏ ảnh cá nhân nếu bạn dùng file vector mẫu thay thế
 my_data/
 my_data/Long
+my_data/Anh
+
+test_ngrok.py

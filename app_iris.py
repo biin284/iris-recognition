@@ -12,9 +12,9 @@ import os
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 UNET_PATH = 'iris_unet_v3.pth'
 ARCFACE_PATH = 'iris_arcface_best.pth'
-ID_PATH = 'long_identity.pt'
-THRESHOLD = 0.25  # Ngưỡng an toàn tuyệt đối cho Demo
-MIN_IRIS_RATIO = 0.020  # Nới lỏng để dễ nhận diện
+IDS_DIR = 'identities'  # Thư mục chứa các file .pt của nhiều người
+THRESHOLD = 0.222  # Ngưỡng an toàn
+MIN_IRIS_RATIO = 0.020
 MIN_CIRCULARITY = 0.40
 
 arc_transform = transforms.Compose([
@@ -39,19 +39,39 @@ class IrisArcFace(torch.nn.Module):
 @st.cache_resource
 def init_system():
     unet = smp.Unet(encoder_name="efficientnet-b0", in_channels=3, classes=1, activation=None).to(DEVICE)
-    unet.load_state_dict(torch.load(UNET_PATH, map_location=DEVICE))
+    if os.path.exists(UNET_PATH):
+        unet.load_state_dict(torch.load(UNET_PATH, map_location=DEVICE))
+
     arcface = IrisArcFace().to(DEVICE)
-    sd = torch.load(ARCFACE_PATH, map_location=DEVICE)
-    arcface.load_state_dict({k: v for k, v in sd.items() if 'head' not in k}, strict=False)
-    unet.eval();
+    if os.path.exists(ARCFACE_PATH):
+        sd = torch.load(ARCFACE_PATH, map_location=DEVICE)
+        arcface.load_state_dict({k: v for k, v in sd.items() if 'head' not in k}, strict=False)
+
+    unet.eval()
     arcface.eval()
     return unet, arcface
 
 
+# --- HÀM MỚI: LOAD TẤT CẢ DANH TÍNH TỪ THƯ MỤC ---
 @st.cache_data
-def get_ref_embedding():
-    if os.path.exists(ID_PATH): return torch.load(ID_PATH, map_location=DEVICE)
-    return None
+def load_identity_db():
+    db = {}
+    if not os.path.exists(IDS_DIR):
+        os.makedirs(IDS_DIR)
+        return db
+
+    # Quét tất cả file .pt trong thư mục identities
+    for f in os.listdir(IDS_DIR):
+        if f.endswith('.pt'):
+            # Lấy tên từ tên file (vd: long_identity.pt -> Long)
+            name = f.replace("_identity.pt", "").capitalize()
+            path = os.path.join(IDS_DIR, f)
+            try:
+                embedding = torch.load(path, map_location=DEVICE)
+                db[name] = embedding
+            except Exception as e:
+                st.error(f"Lỗi tải file {f}: {e}")
+    return db
 
 
 def extract_v4(frame, unet, arcface):
@@ -92,15 +112,21 @@ def extract_v4(frame, unet, arcface):
 
 # --- 4. GIAO DIỆN ---
 st.set_page_config(page_title="Iris Guard v4 Mobile")
-st.title("🛡️ Hệ thống Nhận diện Mống mắt")
-st.sidebar.info("Hạn chót: 03/01/2026")
+st.title("🛡️ Hệ thống Nhận diện Mống mắt (Multi-User)")
 
+# Khởi tạo
 unet, arcface = init_system()
-ref_emb = get_ref_embedding()
+identity_db = load_identity_db()
+
+# Hiển thị danh sách người dùng đã nạp
+if identity_db:
+    st.success(f"Đã tải {len(identity_db)} danh tính: {', '.join(identity_db.keys())}")
+else:
+    st.error(f"Chưa có dữ liệu danh tính nào trong thư mục '{IDS_DIR}'")
 
 img_file = st.camera_input("Chụp ảnh mống mắt")
 
-if img_file and ref_emb is not None:
+if img_file and identity_db:
     file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
     frame = cv2.imdecode(file_bytes, 1)
 
@@ -108,16 +134,31 @@ if img_file and ref_emb is not None:
 
     if emb is None:
         st.warning(f"Trạng thái: {status}")
+        st.image(frame, channels="BGR")
     else:
-        score = torch.mm(emb, ref_emb.t()).item()
+        # --- LOGIC SO KHỚP 1-N ---
+        best_score = -1.0
+        best_name = "Unknown"
+
+        # So sánh embedding hiện tại với TẤT CẢ người trong DB
+        for name, ref_emb in identity_db.items():
+            score = torch.mm(emb, ref_emb.t()).item()
+            if score > best_score:
+                best_score = score
+                best_name = name
+        # -------------------------
+
         col1, col2 = st.columns(2)
         with col1:
             st.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), caption="Ảnh gốc")
         with col2:
-            st.image(cv2.cvtColor(enhanced_img, cv2.COLOR_BGR2RGB), caption="Mống mắt")
+            st.image(cv2.cvtColor(enhanced_img, cv2.COLOR_BGR2RGB), caption="Mống mắt trích xuất")
 
-        if score > THRESHOLD:
-            st.success(f"✅ HỢP LỆ (Score: {score:.4f})")
+        # Hiển thị kết quả
+        if best_score > THRESHOLD:
+            st.success(f"✅ XIN CHÀO: {best_name.upper()}")
+            st.info(f"Độ tương đồng: {best_score:.4f}")
             st.balloons()
         else:
-            st.error(f"❌ KHÔNG KHỚP (Score: {score:.4f})")
+            st.error(f"❌ NGƯỜI LẠ (Unknown)")
+            st.write(f"Kết quả tốt nhất: {best_name} ({best_score:.4f}) - Dưới ngưỡng an toàn")

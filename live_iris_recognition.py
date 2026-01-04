@@ -11,8 +11,8 @@ import os
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 UNET_PATH = 'iris_unet_v3.pth'
 ARCFACE_PATH = 'iris_arcface_best.pth'
-REF_IMAGES_DIR = 'my_data/Long'
-THRESHOLD = 0.50  # Nâng lên 0.50 để đảm bảo an toàn tuyệt đối
+REF_IMAGES_DIR = 'my_data/Anh'
+THRESHOLD = 0.222  # Nâng lên 0.50 để đảm bảo an toàn tuyệt đối
 MIN_IRIS_RATIO = 0.035  # Chấp nhận ảnh của bạn ở mức 4-5% diện tích
 MIN_CIRCULARITY = 0.65  # Bộ lọc quan trọng: Loại bỏ tóc/trán (mống mắt ~ 0.8-1.0)
 

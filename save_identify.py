@@ -20,7 +20,7 @@ def save_clean_identity():
                 print(f"✅ OK: {f}")
 
     if all_embs:
-        torch.save(torch.mean(torch.stack(all_embs), dim=0), 'long_identity.pt')
+        torch.save(torch.mean(torch.stack(all_embs), dim=0), 'identities/long_identity.pt')
         print("\n✨ Đã tạo long_identity.pt (Không Crop).")
 
 
